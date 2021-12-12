@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <winnt.h>
 #include <Shlwapi.h>
+#include <DbgHelp.h>
 #pragma comment(lib, "Shlwapi.lib")
 
 class DmpParser {
@@ -65,12 +66,12 @@ int DmpParser::CheckPEFileFormat(TCHAR *lpExePath)
 	ret = 2;
 	try {
 		lpDosHeader = (PIMAGE_DOS_HEADER)lpFileMap;
-		if (lpDosHeader->e_magic == 0x5A4D)
+		if (lpDosHeader->e_magic == IMAGE_DOS_SIGNATURE)
 		{
 			PIMAGE_NT_HEADERS lpNtHeader = (PIMAGE_NT_HEADERS)((char *)lpFileMap + lpDosHeader->e_lfanew);
-			if (lpNtHeader->Signature == 0x4550)
+			if (lpNtHeader->Signature == IMAGE_NT_SIGNATURE)
 			{
-				if (lpNtHeader->OptionalHeader.Magic == 0x10B || lpNtHeader->OptionalHeader.Magic == 0x20B)
+				if (lpNtHeader->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC || lpNtHeader->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
 				{
 					m_dwTimeStamp = lpNtHeader->FileHeader.TimeDateStamp;
 					m_dwSizeofImage = lpNtHeader->OptionalHeader.SizeOfImage;
@@ -102,7 +103,7 @@ int DmpParser::CheckDumpFileFormat(TCHAR *lpDumpFilePath)
 	int ret = 1;
 	HANDLE hMap = INVALID_HANDLE_VALUE;
 	LPVOID lpFileMap = NULL;
-	HEADER_DUMP *header = NULL;
+	MINIDUMP_HEADER *header = NULL;
 	BYTE *lpBase = NULL;
 	HANDLE hFile = CreateFile(lpDumpFilePath, GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
 		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -123,30 +124,30 @@ int DmpParser::CheckDumpFileFormat(TCHAR *lpDumpFilePath)
 
 	ret = 2;
 	try {
-		header = (HEADER_DUMP *)lpFileMap;
+		header = (MINIDUMP_HEADER *)lpFileMap;
 		lpBase = (BYTE *)lpFileMap;
-		if (header->magic == 0x504D444D)
+		if (header->Signature == MINIDUMP_SIGNATURE)
 		{
 			ret = 3;
-			DMP_STRUCT2 * lpDmpStruct2 = (DMP_STRUCT2 *)(lpBase + header->m_dwStruct2Offset);
+			MINIDUMP_DIRECTORY * dumpDirectory = (MINIDUMP_DIRECTORY *)(lpBase + header->StreamDirectoryRva);
 		
-			for (DWORD i = 0; i < header->unKnown2; i++, lpDmpStruct2++)
+			for (DWORD i = 0; i < header->NumberOfStreams; i++, dumpDirectory++)
 			{
-				if (lpDmpStruct2->m_dwIndex == 4)
+				if (dumpDirectory->StreamType == ModuleListStream)
 				{
-					DWORD dwOffset = lpDmpStruct2->m_dwStruct3Offset;
-					DMP_STRUCT3 *lpDmpStruct3 = (DMP_STRUCT3 *)(lpBase + dwOffset);
-					for (DWORD j = 0; j < lpDmpStruct3->m_dwTableCount; j++)
+//					DWORD dwOffset = dumpDirectory->Location.Rva;
+					MINIDUMP_MODULE_LIST *modueList = (MINIDUMP_MODULE_LIST *)(lpBase + dumpDirectory->Location.Rva);
+					for (DWORD j = 0; j < modueList->NumberOfModules; j++)
 					{
 	//					BYTE *lpEax =(BYTE *) (lpDmpStruct3 + 4 + j * 0x6c);
 	//					DWORD dwEBX = *(DWORD *)(lpEax + 0x10);
-						DMP_STRUCT4 *lpStruct4 = lpDmpStruct3->m_szTable + j;
-						if (lpStruct4->m_dwTimeStamp == m_dwTimeStamp)
+	//					DMP_STRUCT4 *lpStruct4 = modueList->m_szTable + j;
+						if (modueList->Modules[j].TimeDateStamp == m_dwTimeStamp)
 						{
 	//						*(DWORD *)(lpEax + 0x08) = m_dwSizeofImage;
 	//						*(DWORD *)(lpEax + 0x0c) = m_dwChecksum;
-							lpStruct4->m_dwSizeofImage = m_dwSizeofImage;
-							lpStruct4->m_dwChecksum = m_dwChecksum;
+							modueList->Modules[j].SizeOfImage = m_dwSizeofImage;
+							modueList->Modules[j].CheckSum = m_dwChecksum;
 							ret = 0;
 						}
 					}

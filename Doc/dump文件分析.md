@@ -4,7 +4,7 @@ dump文件分普通用户和system。
 
 1. 普通用户目录
 
-   C:\Users\Bancn\AppData\Local\CrashDumps
+   C:\Users\xxx\AppData\Local\CrashDumps
 
 2. system用户
 
